@@ -1,0 +1,808 @@
+openapi: 3.1.0
+info:
+  title: Codebase Q&A Bot API
+  version: 0.1.0
+  summary: JWT-based authentication, repository access control, indexing, and Q&A API
+  description: |
+    Preview API specification for the planned Codebase Q&A Bot backend.
+
+    This spec is aligned with the custom JWT auth, authorization, and RBAC plan.
+    It models:
+      - custom JWT login and refresh
+      - user, role, and repository access management
+      - repository indexing and re-indexing
+      - repository-scoped codebase Q&A
+
+servers:
+  - url: http://localhost:8000
+    description: Local development
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Roles
+  - name: Repositories
+  - name: Repository Access
+  - name: Q&A
+  - name: Audit
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in and receive custom JWT tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokensResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh the access token using a refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Token refresh succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Log out and revoke the refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Logout succeeded
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current authenticated user from the access token
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: Requires `user:manage`
+      responses:
+        '200':
+          description: User list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      summary: Create a user
+      description: Requires `user:manage`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /users/{userId}:
+    get:
+      tags: [Users]
+      summary: Get a user by ID
+      description: Requires `user:manage`
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      summary: Update a user
+      description: Requires `user:manage`
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/roles:
+    put:
+      tags: [Users]
+      summary: Replace the roles assigned to a user
+      description: Requires `role:manage`
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRolesRequest'
+      responses:
+        '200':
+          description: User roles updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /roles:
+    get:
+      tags: [Roles]
+      summary: List roles
+      description: Requires `role:manage`
+      responses:
+        '200':
+          description: Role list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Role'
+    post:
+      tags: [Roles]
+      summary: Create a role
+      description: Requires `role:manage`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Role'
+
+  /repositories:
+    get:
+      tags: [Repositories]
+      summary: List repositories visible to the current user
+      description: Requires `repo:view`
+      responses:
+        '200':
+          description: Repository list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Repository'
+    post:
+      tags: [Repositories]
+      summary: Register and index a repository
+      description: Requires `repo:index`
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexRepositoryRequest'
+      responses:
+        '202':
+          description: Repository indexing started or completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexRepositoryResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /repositories/{repositoryId}:
+    get:
+      tags: [Repositories]
+      summary: Get repository details
+      description: Requires `repo:view`
+      parameters:
+        - $ref: '#/components/parameters/RepositoryId'
+      responses:
+        '200':
+          description: Repository details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Repository'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /repositories/{repositoryId}/reindex:
+    post:
+      tags: [Repositories]
+      summary: Re-index an existing repository
+      description: Requires `repo:reindex`
+      parameters:
+        - $ref: '#/components/parameters/RepositoryId'
+      responses:
+        '202':
+          description: Re-index started or completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexRepositoryResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /repositories/{repositoryId}/access:
+    get:
+      tags: [Repository Access]
+      summary: List repository access grants
+      description: Requires `repo:view` and admin/editor-level management rights
+      parameters:
+        - $ref: '#/components/parameters/RepositoryId'
+      responses:
+        '200':
+          description: Access grants
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RepositoryAccess'
+    post:
+      tags: [Repository Access]
+      summary: Grant or update repository access for a user
+      description: Requires `repo:index` or admin rights depending on final policy
+      parameters:
+        - $ref: '#/components/parameters/RepositoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantRepositoryAccessRequest'
+      responses:
+        '200':
+          description: Repository access updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepositoryAccess'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /repositories/{repositoryId}/questions:
+    post:
+      tags: [Q&A]
+      summary: Ask a question about a repository
+      description: Requires `repo:ask`
+      parameters:
+        - $ref: '#/components/parameters/RepositoryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskQuestionRequest'
+      responses:
+        '200':
+          description: Answer generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AskQuestionResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /audit-logs:
+    get:
+      tags: [Audit]
+      summary: List audit logs
+      description: Requires `audit:view`
+      parameters:
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: repositoryId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RepositoryId:
+      name: repositoryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    Unauthorized:
+      description: Authentication failed or token is invalid
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated but not allowed to perform this action
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Requested resource was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+    LoginRequest:
+      type: object
+      required: [usernameOrEmail, password]
+      properties:
+        usernameOrEmail:
+          type: string
+        password:
+          type: string
+          format: password
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    AuthTokensResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          description: Access token expiry in seconds
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+
+    RefreshResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+        refreshToken:
+          type: string
+          description: Optional if refresh token rotation is enabled
+
+    CurrentUserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/CurrentUser'
+
+    CurrentUser:
+      type: object
+      required: [id, username, roles, permissions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+
+    User:
+      type: object
+      required: [id, username, isActive, roles]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        isActive:
+          type: boolean
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateUserRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+        roleIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        isActive:
+          type: boolean
+
+    AssignRolesRequest:
+      type: object
+      required: [roleIds]
+      properties:
+        roleIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    Role:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        permissions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+
+    CreateRoleRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        permissionNames:
+          type: array
+          items:
+            type: string
+
+    Permission:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    Repository:
+      type: object
+      required: [id, repoUrl, namespace, displayName, chunkCount, isActive]
+      properties:
+        id:
+          type: string
+          format: uuid
+        repoUrl:
+          type: string
+          format: uri
+        namespace:
+          type: string
+        displayName:
+          type: string
+        chunkCount:
+          type: integer
+        indexedByUserId:
+          type: string
+          format: uuid
+          nullable: true
+        lastIndexedAt:
+          type: string
+          format: date-time
+          nullable: true
+        isActive:
+          type: boolean
+
+    IndexRepositoryRequest:
+      type: object
+      required: [repoUrl]
+      properties:
+        repoUrl:
+          type: string
+          format: uri
+        forceReindex:
+          type: boolean
+          default: false
+
+    IndexRepositoryResponse:
+      type: object
+      required: [repositoryId, repoUrl, namespace, status]
+      properties:
+        repositoryId:
+          type: string
+          format: uuid
+        repoUrl:
+          type: string
+          format: uri
+        namespace:
+          type: string
+        chunkCount:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [queued, indexing, completed, failed]
+        message:
+          type: string
+
+    RepositoryAccess:
+      type: object
+      required: [repositoryId, userId, accessLevel]
+      properties:
+        repositoryId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        accessLevel:
+          type: string
+          enum: [viewer, editor, admin]
+        canView:
+          type: boolean
+        canAsk:
+          type: boolean
+        canIndex:
+          type: boolean
+        canReindex:
+          type: boolean
+
+    GrantRepositoryAccessRequest:
+      type: object
+      required: [userId, accessLevel]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        accessLevel:
+          type: string
+          enum: [viewer, editor, admin]
+
+    AskQuestionRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+        topK:
+          type: integer
+          default: 5
+        includeContext:
+          type: boolean
+          default: false
+
+    AskQuestionResponse:
+      type: object
+      required: [answer, sources]
+      properties:
+        answer:
+          type: string
+        sources:
+          type: array
+          items:
+            type: string
+        context:
+          type: string
+          nullable: true
+        responseTimeMs:
+          type: integer
+
+    AuditLog:
+      type: object
+      required: [id, action, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+          nullable: true
+        action:
+          type: string
+        repoUrl:
+          type: string
+          format: uri
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        details:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        code:
+          type: string
+        details:
+          type: object
+          additionalProperties: true

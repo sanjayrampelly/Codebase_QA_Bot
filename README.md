@@ -1,61 +1,131 @@
 # Codebase Q&A Bot
 
-Codebase Q&A Bot is a retrieval-augmented generation (RAG) application that indexes a GitHub repository and lets you ask natural-language questions about the codebase. Answers are grounded in source files and returned with file-level citations so you can trace where the response came from.
+Codebase Q&A Bot is a production-style RAG application for indexing GitHub repositories and asking grounded questions about the codebase. It now includes a FastAPI backend with Swagger docs, custom JWT authentication, role-based access control, repository-level authorization, and a Streamlit frontend that talks to the backend over HTTP.
 
-The project is built with LangChain for orchestration, Pinecone for vector search, Hugging Face sentence-transformer embeddings, Groq for low-latency LLM inference, and Streamlit for the UI.
+## What The Project Does
 
-## What It Does
+- Index public GitHub repositories into Pinecone
+- Chunk and embed code/text files with LangChain + Hugging Face
+- Answer repository-specific questions with Groq-backed RAG
+- Return file-level citations with answers
+- Support custom JWT auth with login, refresh, logout, and registration
+- Support RBAC for admin vs viewer/editor-style access
+- Support repository-level access grants
+- Expose backend APIs through Swagger UI and ReDoc
+- Let the Streamlit UI use the backend instead of calling core services directly
 
-- Clone a public GitHub repository into a temporary workspace
-- Load supported source and text files from the repository
-- Chunk files into retrieval-friendly LangChain documents
-- Generate embeddings with a Hugging Face model
-- Store vectors in Pinecone using the repository URL as the namespace
-- Retrieve relevant chunks and answer questions with Groq
-- Return answers with file citations
-- Boost retrieval when the question explicitly mentions a file like `requirements.txt`, `README.md`, or a path
+## Current Architecture
+
+The app now has two layers:
+
+1. `FastAPI backend`
+   Handles authentication, authorization, repository management, indexing, Q&A, audit logs, and Swagger docs.
+2. `Streamlit frontend`
+   Handles login/register UX, repository selection, chat, and admin workflows by calling backend APIs.
+
+High-level flow:
+
+1. User logs in or registers through Streamlit or Swagger
+2. Backend issues custom JWT access and refresh tokens
+3. User indexes a repository through the backend
+4. Backend clones the repo, chunks documents, embeds them, and stores vectors in Pinecone
+5. User asks questions against a selected repository
+6. Backend enforces permissions and repository access before running retrieval + generation
 
 ## Tech Stack
 
-- `LangChain`: ingestion flow, retriever integration, prompt orchestration
-- `LangChain Pinecone`: vector store integration
-- `Pinecone`: hosted vector database
-- `Hugging Face`: embeddings via `sentence-transformers`
-- `Groq`: LLM backend for answer generation
-- `Streamlit`: web UI
+- `FastAPI`: backend API and Swagger docs
+- `Streamlit`: frontend UI
+- `LangChain`: ingestion, retrieval, and RAG orchestration
+- `langchain-pinecone`: Pinecone vector-store integration
+- `Pinecone`: vector database
+- `Hugging Face`: embeddings via sentence-transformer models
+- `Groq`: LLM inference
+- `SQLAlchemy`: app database models and persistence
+- `PyJWT`: custom JWT creation and validation
+- `bcrypt`: password hashing
 - `GitPython`: repository cloning
-- `python-dotenv`: local environment and secrets loading
+- `python-dotenv`: environment loading
+
+## Main Features
+
+- Public GitHub repository ingestion
+- File-aware retrieval boosting for direct file questions like `requirements.txt`
+- Repository namespaces in Pinecone
+- Custom JWT access + refresh token flow
+- Self-registration for standard users
+- Bootstrap admin user from `.env`
+- Role-based permissions
+- Repository-specific access control
+- Audit logging
+- Swagger-first backend development
+- Streamlit UI backed by API calls
+
+## Roles And Access
+
+Current behavior is designed around role-based and repository-based access:
+
+- `admin`
+  Can manage users, roles, repository access, indexing, re-indexing, audit logs, and question answering.
+- `viewer`
+  Can view accessible repositories and ask questions where access is granted.
+- Additional roles
+  Can be added through the API/admin workflows.
+
+Repository access is checked separately from global role permissions. A user may have permission to ask questions in general, but still needs access to the specific repository.
 
 ## Project Structure
 
-- `app/`
-  Core application logic
+- `api/main.py`
+  FastAPI app with auth, users, roles, repositories, access control, Q&A, and audit endpoints
+- `api/deps.py`
+  Bearer token auth dependencies and permission guards
+- `api/schemas.py`
+  Request/response models for the API
 - `app/ingestor.py`
-  Clones repositories, loads files, chunks documents, attaches metadata
+  Repository cloning, file loading, chunking, and metadata enrichment
 - `app/embedder.py`
-  Loads and caches the Hugging Face embeddings model
+  Hugging Face embedding model loading and caching
 - `app/vectorstore.py`
-  Creates and connects to Pinecone, upserts documents, builds retrievers
-- `app/llm.py`
-  Configures the Groq chat model
+  Pinecone store initialization, upsert, retrieval, namespace deletion
 - `app/rag_chain.py`
-  Formats retrieved context, applies file-aware retrieval boosting, runs the answer chain
+  RAG answer assembly with file-aware retrieval behavior
+- `app/llm.py`
+  Groq LLM setup
+- `app/db.py`
+  SQLAlchemy engine/session/bootstrap helpers
+- `app/models.py`
+  Users, roles, permissions, repositories, refresh tokens, audit logs, and login attempts
+- `app/auth.py`
+  Login, logout, refresh, session restoration, throttling
+- `app/jwt_service.py`
+  Custom JWT generation and decoding
+- `app/authorization.py`
+  Permission and role helper functions
+- `app/repository_service.py`
+  Repository record sync and repository access management
+- `app/user_service.py`
+  User creation, role assignment, bootstrap admin logic
+- `app/audit.py`
+  Audit event persistence and queries
 - `ui/streamlit_app.py`
-  Streamlit UI for indexing and asking questions
-- `utils/`
-  Shared helpers
-- `utils/github_utils.py`
-  Validates and clones GitHub repositories
-- `utils/file_filters.py`
-  Controls which file types are indexed
+  Streamlit frontend using backend API calls
+- `utils/api_client.py`
+  API client used by Streamlit
 - `utils/config.py`
-  Loads environment variables and normalizes config values
+  `.env` loading and normalization helpers
 - `tests/`
-  Local and integration-style tests
+  Ingestion and RAG-related tests
+- `openapi.yaml`
+  API spec file for preview and iteration
+- `AUTH_RBAC_PLAN.md`
+  JWT/RBAC implementation plan
+- `IMPLEMENTATION.md`
+  Phase-by-phase implementation notes
 
-## Supported Files
+## Supported Repository Files
 
-The ingestor currently indexes these file types:
+The ingestor currently indexes:
 
 - `.py`
 - `.js`
@@ -70,20 +140,52 @@ The ingestor currently indexes these file types:
 - `.yaml`
 - `.yml`
 
-Directories like `.git`, `node_modules`, `venv`, `.venv`, `dist`, `build`, and `__pycache__` are skipped. Files ending in `.lock` are also skipped.
+Skipped directories include:
 
-## How It Works
+- `.git`
+- `node_modules`
+- `venv`
+- `.venv`
+- `dist`
+- `build`
+- `__pycache__`
 
-1. The user enters a GitHub repository URL in the Streamlit UI.
-2. The repository is cloned locally into a temp directory.
-3. Supported files are loaded and converted into LangChain `Document` objects.
-4. Each document is chunked and enriched with metadata such as:
-   `file_path`, `file_name`, `language`, `repo_url`, and `chunk_index`
-5. Chunks are embedded with a Hugging Face sentence-transformer model.
-6. Embeddings are stored in Pinecone under a namespace derived from the repository URL.
-7. When a user asks a question, Pinecone retrieves matching chunks.
-8. If the question names a file explicitly, retrieval is boosted toward chunks from that file.
-9. Groq generates the answer using only the retrieved context.
+Files ending in `.lock` are skipped.
+
+## Environment Variables
+
+Create a `.env` file in the project root. Start from `.env.example`.
+
+```env
+PINECONE_API_KEY=
+PINECONE_INDEX_NAME=codebase-qna
+GROQ_API_KEY=
+GROQ_MODEL=llama3-70b-8192
+HUGGINGFACE_API_KEY=
+HUGGINGFACE_MODEL=sentence-transformers/all-MiniLM-L6-v2
+API_BASE_URL=http://127.0.0.1:8000
+DATABASE_URL=
+JWT_SECRET_KEY=
+JWT_ALGORITHM=HS256
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+JWT_REFRESH_TOKEN_EXPIRE_DAYS=7
+AUTH_SELF_REGISTRATION_ENABLED=true
+AUTH_REGISTRATION_DEFAULT_ROLE=viewer
+AUTH_MAX_LOGIN_ATTEMPTS=5
+AUTH_LOCKOUT_MINUTES=15
+INITIAL_ADMIN_USERNAME=
+INITIAL_ADMIN_EMAIL=
+INITIAL_ADMIN_PASSWORD=
+LOG_LEVEL=INFO
+```
+
+Notes:
+
+- `INITIAL_ADMIN_*` is used to bootstrap the first admin user if the database has no users yet.
+- `AUTH_SELF_REGISTRATION_ENABLED=true` allows public registration through `/auth/register`.
+- `API_BASE_URL` is used by Streamlit to call the backend.
+- `HUGGINGFACE_API_KEY` is recommended to reduce anonymous rate limits.
+- `utils/config.py` normalizes BOM-prefixed keys and null-like values in `.env`.
 
 ## Setup
 
@@ -102,31 +204,44 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### 3. Configure environment variables
+### 3. Configure `.env`
 
-Create a `.env` file in the project root. You can start from `.env.example`.
+Copy `.env.example` to `.env` and fill in your keys and auth settings.
 
-Required and supported keys:
+At minimum you will typically want:
 
-```env
-PINECONE_API_KEY=
-PINECONE_INDEX_NAME=codebase-qna
-GROQ_API_KEY=
-GROQ_MODEL=llama3-70b-8192
-HUGGINGFACE_API_KEY=
-HUGGINGFACE_MODEL=sentence-transformers/all-MiniLM-L6-v2
-LOG_LEVEL=INFO
-```
+- `PINECONE_API_KEY`
+- `PINECONE_INDEX_NAME`
+- `GROQ_API_KEY`
+- `GROQ_MODEL`
+- `HUGGINGFACE_API_KEY` or public model access
+- `JWT_SECRET_KEY`
+- `INITIAL_ADMIN_USERNAME`
+- `INITIAL_ADMIN_EMAIL`
+- `INITIAL_ADMIN_PASSWORD`
 
-Notes:
+## Run The Backend First
 
-- `PINECONE_INDEX_NAME` controls the Pinecone index used by the app.
-- `HUGGINGFACE_API_KEY` is optional for public models, but recommended to avoid stricter anonymous rate limits.
-- The app normalizes some env edge cases, including BOM-prefixed `.env` keys and null-like values.
+The frontend now depends on the API backend, so start FastAPI before Streamlit.
 
-### 4. Start the app
+### Start FastAPI
 
 ```powershell
+.\venv\Scripts\uvicorn.exe api.main:app --reload
+```
+
+Backend URLs:
+
+- Swagger UI: `http://127.0.0.1:8000/docs`
+- ReDoc: `http://127.0.0.1:8000/redoc`
+- Health: `http://127.0.0.1:8000/health`
+
+## Start The Streamlit UI
+
+In a second terminal:
+
+```powershell
+.\venv\Scripts\Activate.ps1
 streamlit run ui/streamlit_app.py
 ```
 
@@ -136,19 +251,71 @@ Streamlit usually opens at:
 http://localhost:8501
 ```
 
-## Using the App
+## Backend API Overview
 
-1. Enter a public GitHub repository URL.
-2. Click `Index Repo`.
-3. Wait for the repository to be cloned, chunked, embedded, and uploaded to Pinecone.
-4. Ask a question about the codebase.
-5. Review the answer and cited source files.
+Main endpoint groups:
 
-The UI also supports:
+- `Auth`
+  - `POST /auth/login`
+  - `POST /auth/register`
+  - `POST /auth/refresh`
+  - `POST /auth/logout`
+  - `GET /auth/me`
+- `Users`
+  - `GET /users`
+  - `POST /users`
+  - `GET /users/{user_id}`
+  - `PATCH /users/{user_id}`
+  - `PUT /users/{user_id}/roles`
+- `Roles`
+  - `GET /roles`
+  - `POST /roles`
+- `Repositories`
+  - `GET /repositories`
+  - `POST /repositories`
+  - `GET /repositories/{repository_id}`
+  - `POST /repositories/{repository_id}/reindex`
+- `Repository Access`
+  - `GET /repositories/{repository_id}/access`
+  - `POST /repositories/{repository_id}/access`
+- `Q&A`
+  - `POST /repositories/{repository_id}/questions`
+- `Audit`
+  - `GET /audit-logs`
 
-- `Re-index` for refreshing an already indexed repository
-- a small in-session chat history
-- a debug view for retrieved chunks
+## Streamlit UI Overview
+
+The UI now supports:
+
+- login and registration
+- JWT-backed authenticated sessions
+- repository dropdown for accessible repositories
+- new repository indexing through the backend
+- re-indexing for the selected repository
+- question asking against the active repository
+- response history
+- optional retrieved-context display
+- admin management panels for users, roles, repository access, and audit logs
+
+If the backend is unavailable, the UI now shows a clearer error state instead of failing silently.
+
+## Typical Usage Flow
+
+### Standard user flow
+
+1. Register through Swagger or Streamlit
+2. Log in
+3. Wait for an admin to grant repository access if needed
+4. Select an accessible repository
+5. Ask repository-specific questions
+
+### Admin flow
+
+1. Log in with the bootstrapped admin account
+2. Index a repository
+3. Grant repository access to users
+4. Manage roles and users
+5. Review audit logs
 
 ## Example Questions
 
@@ -160,41 +327,46 @@ The UI also supports:
 
 ## Testing
 
-Run the test suite with:
+Run tests with:
 
 ```powershell
 pytest tests -q
 ```
 
-What to expect:
+Notes:
 
-- local tests run without external services
-- Pinecone and Groq integration tests are skipped when API keys are not set
+- Local tests can run without full external service access.
+- Pinecone/Groq integration-style tests may skip when keys are missing.
+- `pytest.ini` is used so tests can import the project correctly from the repo root.
 
-## Current Behavior and Notes
+## Current Notes
 
-- Pinecone indexes are auto-created if missing.
 - Repository URLs are used as Pinecone namespaces.
-- Explicit file mentions like `requirements.txt` and `README.md` are retrieval-boosted.
-- The embeddings model is cached to reduce repeated reloads in Streamlit.
-- On the first run, model download and embedding initialization can take noticeably longer.
-
-## Re-indexing Matters
-
-When ingestion metadata changes, previously indexed repositories do not automatically gain the new metadata in Pinecone. If you pull code changes that affect retrieval behavior, re-index the repository from the UI so Pinecone stores the updated document metadata.
+- Re-indexing is important after ingestion metadata changes.
+- File-aware retrieval boosting helps direct file questions.
+- The embedding model is cached to reduce repeated load overhead.
+- First-time embedding model downloads can take longer.
+- Self-registration creates a standard non-admin user by default.
+- Admin users are created from `.env` bootstrap config, not through public registration.
 
 ## Limitations
 
-- The current GitHub flow is designed for public repositories.
-- Retrieval quality depends on chunking, embeddings, and the phrasing of the question.
-- Very large repositories may take longer to embed and upload.
-- This project does not yet implement advanced retry policies or background jobs for long-running indexing tasks.
+- Public GitHub repositories are the main supported flow today.
+- Indexing is synchronous and can take time for large repositories.
+- Background job workers are not yet implemented.
+- Schema setup currently relies on SQLAlchemy bootstrap helpers instead of a full migration workflow.
+
+## Related Docs
+
+- `IMPLEMENTATION.md`
+- `AUTH_RBAC_PLAN.md`
+- `openapi.yaml`
 
 ## Future Improvements
 
-- Better support for private repositories
-- Hybrid retrieval with semantic plus keyword search
-- Stronger repository-level caching
-- Background indexing workers
-- Deployment-ready auth and usage controls
-- More structured answer formatting in the UI
+- Private repository support
+- Background indexing jobs
+- Stronger migration management with Alembic
+- More refined admin UX
+- Better retry/backoff behavior for external providers
+- Hybrid retrieval with semantic + keyword search

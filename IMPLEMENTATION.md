@@ -288,6 +288,7 @@ The schema now includes:
 - Heavy RAG imports were kept lazy in `api/main.py` so the API and Swagger docs start faster.
 - The generated FastAPI OpenAPI schema is now the practical backend contract for local development.
 - `openapi.yaml` still exists as the planning/spec artifact, but the running backend docs now come from the FastAPI app itself.
+- The Streamlit UI has now been refactored to behave as an API client against this backend instead of calling the auth/repository services directly.
 
 ## Environment Variables Needed
 

@@ -6,8 +6,10 @@ langchain-pinecone
 pinecone
 sentence-transformers
 streamlit
+pandas
 fastapi
 uvicorn
+requests
 gitpython
 python-dotenv
 sqlalchemy
