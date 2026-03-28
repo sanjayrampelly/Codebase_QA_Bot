@@ -1,4 +1,4 @@
-﻿langchain
+langchain
 langchain-community
 langchain-groq
 langchain-huggingface
@@ -6,7 +6,13 @@ langchain-pinecone
 pinecone
 sentence-transformers
 streamlit
+fastapi
+uvicorn
 gitpython
 python-dotenv
+sqlalchemy
+alembic
+PyJWT
+bcrypt
 tiktoken
 pytest

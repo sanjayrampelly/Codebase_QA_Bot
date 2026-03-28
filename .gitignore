@@ -1,4 +1,4 @@
-﻿.env
+.env
 .venv
 venv/
 __pycache__/
@@ -7,3 +7,7 @@ __pycache__/
 .DS_Store
 .idea/
 .vscode/
+codebase_qna.db
+*.db
+.pytest_cache/
+pytest.ini
