@@ -32,6 +32,55 @@ High-level flow:
 5. User asks questions against a selected repository
 6. Backend enforces permissions and repository access before running retrieval + generation
 
+## Architecture Diagram
+
+```text
++-------------------+         +-------------------+         +------------------------+
+|       User        | <-----> |   Streamlit UI    | <-----> |     FastAPI Backend    |
++-------------------+         +-------------------+         +------------------------+
+                                                                     |            |
+                                                                     |            |
+                                                        +------------+            +------------------+
+                                                        |                                              |
+                                                        v                                              v
+                                           +------------------------+                    +------------------------+
+                                           |   JWT Auth + RBAC      |                    |  Repository Services   |
+                                           +------------------------+                    +------------------------+
+                                                        |                                              |
+                                                        v                                              v
+                                           +------------------------+                    +------------------------+
+                                           | SQLite / SQLAlchemy DB |                    | GitHub Repo Ingestion  |
+                                           +------------------------+                    +------------------------+
+                                                                                                    |
+                                                                                                    v
+                                                                                       +------------------------+
+                                                                                       | HF Embeddings Model    |
+                                                                                       +------------------------+
+                                                                                                    |
+                                                                                                    v
+                                                                                       +------------------------+
+                                                                                       | Pinecone Vector Store  |
+                                                                                       +------------------------+
+                                                                                                    |
+                                                                                                    v
+                                                                                       +------------------------+
+                                                                                       | RAG Chain + Groq LLM   |
+                                                                                       +------------------------+
+                                                                                                    |
+                                                                                                    v
+                                                                                       +------------------------+
+                                                                                       | Answer + File Sources  |
+                                                                                       +------------------------+
+```
+
+The diagram shows the current runtime flow:
+
+- the user interacts with `Streamlit`
+- `Streamlit` calls the `FastAPI` backend
+- the backend handles `JWT auth`, `RBAC`, and repository access using the app database
+- indexing pulls code from `GitHub`, chunks it, embeds it, and stores vectors in `Pinecone`
+- question answering runs through the `RAG chain`, retrieves from `Pinecone`, and generates answers with `Groq`
+
 ## Tech Stack
 
 - `FastAPI`: backend API and Swagger docs
