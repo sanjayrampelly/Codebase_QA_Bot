@@ -1,6 +1,5 @@
 # Codebase Q&A Bot
 
-
 Codebase Q&A Bot is a production-style RAG application for indexing GitHub repositories and asking grounded questions about the codebase. It now includes a FastAPI backend with Swagger docs, custom JWT authentication, role-based access control, repository-level authorization, and a Streamlit frontend that talks to the backend over HTTP.
 
 ## What The Project Does
